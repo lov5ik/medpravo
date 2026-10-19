@@ -16,7 +16,7 @@ function createGitHubClient(href,fetchImpl,storage){
    const card=project?'https://regulation.gov.ru/projects/'+project[1]+'/':null;
    return {...p,reader_path:readerPath(p.reader_path,'documents'),open_url:card||p.url,date_evidence:safeURL(p.date_evidence)?p.date_evidence:null,text_source:safeURL(p.text_source)?p.text_source:null,source_page:card||(safeURL(p.source_page)?p.source_page:null),download_path:safePath(p.download_path)?p.download_path:null};
   });
-  data.sources=data.sources.map(s=>({...s,reader_path:readerPath(s.reader_path,'sources'),homepage:s.id==='regulation'?'https://regulation.gov.ru/':safeURL(s.homepage)?s.homepage:null,seeds:s.seeds.filter(safeURL)})).filter(s=>s.seeds.length);
+  data.sources=data.sources.map(s=>({...s,reader_path:readerPath(s.reader_path,'sources'),homepage:s.id==='regulation'?'https://regulation.gov.ru/':safeURL(s.homepage)?s.homepage:null,seeds:s.seeds.filter(safeURL),fallback_seeds:Array.isArray(s.fallback_seeds)?s.fallback_seeds.filter(safeURL):[]})).filter(s=>s.seeds.length);
   data.workflow_url=/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/workflows\/collect\.yml$/.test(data.workflow_url||'')?data.workflow_url:null;
   snapshot=data;return data;
  }
