@@ -26,7 +26,7 @@ def source_path(identifier):
 
 def remember(connection,source,url,text,found,checked_at,permitted,parse_page):
     # Keep only configured catalog pages, not an unbounded crawl or HTTP cache.
-    if url not in source['seeds'] and source.get('adapter') not in ('clinrec','projects'):return
+    if url not in source['seeds']+source.get('fallback_seeds',[]) and source.get('adapter') not in ('clinrec','projects'):return
     links=[{'url':p['url'],'title':p['title']} for p in found if safe_url(p['url']) and permitted(p['url'],source)][:300]
     visible='' if source.get('adapter') in ('clinrec','projects') else parse_page(text).visible[:30000]
     with connection() as con:
@@ -68,6 +68,7 @@ def export(site,sources,pubs,connection):
     for s in sources:
         s['reader_path']=source_path(s['id'])
         body='<p class="note">Сохранённые материалы источника. Доступ к оригинальному сайту проверяется отдельно; эта страница открывается с GitHub.</p><p>'+link(s.get('homepage') or s['seeds'][0],'Открыть сайт источника ↗')+'</p>'
+        for url in s.get('fallback_seeds',[]):body+='<p>'+link(url,'Официальный резерв: опубликованные акты ↗')+'</p>'
         body+='<p class="note">Последняя попытка сбора: '+html.escape(s.get('checked_at') or 'ещё не выполнялась')+'</p><details><summary>Результат проверки</summary><p>'+html.escape(s.get('detail') or 'Нет результата')+'</p></details>'
         rows=by_source[s['id']]
         body+='<h2>Собранные публикации с 01.10.2026: '+str(len(rows))+'</h2>'
