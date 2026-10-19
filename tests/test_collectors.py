@@ -206,6 +206,20 @@ class CollectorTests(unittest.TestCase):
         first={**self.content('<div class="news-item"><div class="news-item-date">30 сентября 2026</div><h3><a href="/administratsiya/zakonotvorchestvo/munitsipalnye-pravovye-akty/123/">Постановление от 29.09.2026 № 1</a></h3><p>О медицинской помощи</p></div><a href="?PAGEN_1=2">Далее</a>'),'url':seed}
         with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',return_value=first) as fetch:result=monitor.scan_source(source)
         self.assertEqual(fetch.call_count,1);self.assertEqual(result['pending'],0);self.assertEqual(result['status'],'collected')
+
+    def test_public_catalog_pagination_strips_admin_return_and_legacy_ui_parameters(self):
+        source=next(s for s in monitor.catalog() if s['id']=='rospotreb')
+        url='https://rospotrebnadzor.ru/documents/documents.php?back_url_admin=%2Fbitrix%2Fadmin%2Fiblock.php&_49_struts_action=%2Fmy_places%2Fview&arrFilter_ff%5BNAME%5D=&set_filter=Y&PAGEN_1=5'
+        self.assertEqual(monitor.canonical(url),source['seeds'][0]+'?PAGEN_1=5')
+        self.assertFalse(monitor.permitted('https://rospotrebnadzor.ru/bitrix/admin/index.php?page=2',source))
+        self.assertEqual(monitor.canonical('https://minzdrav.gov.ru/documents?page='),'https://minzdrav.gov.ru/documents')
+        self.assertIn('arrFilter_ff%5BNAME%5D=%D0%9E%D0%9C%D0%A1',monitor.canonical(source['seeds'][0]+'?arrFilter_ff%5BNAME%5D=%D0%9E%D0%9C%D0%A1&PAGEN_1=5'))
+
+    def test_saved_duplicate_first_page_does_not_consume_collection_limit(self):
+        source={**self.source,'page_limit':2}
+        with monitor.connection() as con:con.execute('INSERT OR REPLACE INTO source_cursor VALUES (?,?)',(source['id'],json.dumps([source['seeds'][0]+'?page=',source['seeds'][0]+'?page=2'])))
+        with patch.object(monitor,'fetch',return_value=self.content('')) as fetch:monitor.scan_source(source)
+        self.assertEqual([c.args[0] for c in fetch.call_args_list],[source['seeds'][0],source['seeds'][0]+'?page=2'])
     def test_portal_database_overload_is_retried_and_reported_clearly(self):
         def unavailable(*args,**kwargs):
             raise urllib.error.HTTPError(self.candidate['url'],500,'Internal Server Error',{},io.BytesIO(b'Mysql connect error: Too many connections'))
