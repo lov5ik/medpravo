@@ -220,6 +220,13 @@ class CollectorTests(unittest.TestCase):
         with monitor.connection() as con:con.execute('INSERT OR REPLACE INTO source_cursor VALUES (?,?)',(source['id'],json.dumps([source['seeds'][0]+'?page=',source['seeds'][0]+'?page=2'])))
         with patch.object(monitor,'fetch',return_value=self.content('')) as fetch:monitor.scan_source(source)
         self.assertEqual([c.args[0] for c in fetch.call_args_list],[source['seeds'][0],source['seeds'][0]+'?page=2'])
+
+    def test_rospotreb_subdomains_share_a_slow_request_budget(self):
+        with patch.dict(transport.HOST_NEXT,{},clear=True),patch.object(transport.time,'monotonic',return_value=100),patch.object(transport.time,'sleep') as sleep:
+            transport.pace('rospotrebnadzor.ru');transport.pace('40.rospotrebnadzor.ru')
+            sleep.assert_called_once_with(5.0)
+            transport.pace('minzdrav.gov.ru')
+            self.assertEqual(sleep.call_count,1)
     def test_portal_database_overload_is_retried_and_reported_clearly(self):
         def unavailable(*args,**kwargs):
             raise urllib.error.HTTPError(self.candidate['url'],500,'Internal Server Error',{},io.BytesIO(b'Mysql connect error: Too many connections'))
