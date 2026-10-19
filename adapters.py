@@ -6,6 +6,24 @@ import re
 import urllib.parse
 import titles
 import xml.etree.ElementTree as ET
+import document_metadata
+
+
+def municipal_rows(text,base,parse_page):
+    """Keep the act card, its publication date and subject together, not generic file buttons."""
+    found=[]
+    for block in re.split(r'<div\b(?=[^>]*\bclass=["\']news-item["\'])[^>]*>',text,flags=re.I)[1:]:
+        heading=re.search(r'<h3\b[^>]*>(.*?)</h3>',block,re.I|re.S)
+        date=re.search(r'<div\b[^>]*class=["\']news-item-date["\'][^>]*>(.*?)</div>',block,re.I|re.S)
+        if not heading:continue
+        act=next(((u,t) for u,t in parse_page(heading[1]).links if re.search(r'/munitsipalnye-pravovye-akty/\d+/?$',urllib.parse.urlsplit(u).path)),None)
+        if not act:continue
+        subject=re.search(r'<p\b[^>]*>(.*?)</p>',block[heading.end():],re.I|re.S)
+        original=act[1]
+        found.append({'url':urllib.parse.urljoin(base,act[0]),'title':titles.combine(original,parse_page(subject[1]).visible if subject else ''),
+                      'original_title':original,'published_at':document_metadata.normalize(parse_page(date[1]).visible) if date else None,
+                      'date_basis':'Дата размещения в карточке муниципального каталога','source_page':base})
+    return found
 
 def parse_clinrec(text,source):
     value=json.loads(text)
