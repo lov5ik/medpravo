@@ -25,7 +25,7 @@ def scan_source(namespace,source):
     # An old pagination queue must not starve the other OMS sections.
     seed_offset=(seed_cursor[0] if seed_cursor and source.get('adapter') not in ('clinrec','projects') else 0)%len(source['seeds'])
     roots=source['seeds'][seed_offset:]+source['seeds'][:seed_offset]
-    queue=list(dict.fromkeys(roots+(json.loads(cursor[0]) if cursor else [])))
+    queue=list(dict.fromkeys(m.canonical(url) for url in roots+(json.loads(cursor[0]) if cursor else [])))
     queue=[url for url in queue if url not in source.get('obsolete_seeds',[]) and not any(url.startswith(p) for p in source.get('obsolete_prefixes',[]))]
     visited,failures,failed_pages=set(),[],[]
     found_count,pages_read,added,excluded,date_excluded=0,0,0,0,0
