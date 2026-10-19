@@ -568,7 +568,7 @@
     "time_budget": 120,
     "adapter": "html",
     "ca_bundle": "russian-chain.pem",
-    "transport_note": "Официальный портал доступен по HTTP; этот источник выключен по умолчанию.",
+    "transport_note": "Источник включён. Для доступа через российский узел нужна поддержка HTTP; результат последней попытки показан в статусе.",
     "obsolete_seeds": [
       "https://pravo.gov.ru/",
       "https://www.pravo.gov.ru/"
