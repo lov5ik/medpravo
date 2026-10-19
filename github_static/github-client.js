@@ -21,6 +21,7 @@ function createGitHubClient(href,fetchImpl,storage){
   snapshot=data;return data;
  }
  const flagged=p=>Boolean(read[p.url]);
+ const publicationDay=p=>/^\d{4}-\d{2}-\d{2}$/.test(p.published_at||'')?p.published_at:'';
  const api=async(path,body)=>{
   if(path==='state'){
    const data=await load();return {...data,count:data.publications.length,medical_count:data.publications.filter(p=>p.relevance==='medical').length,unread:data.publications.filter(p=>!flagged(p)&&p.relevance==='medical').length};
@@ -41,8 +42,13 @@ function createGitHubClient(href,fetchImpl,storage){
       (!f.get('source')||(p.source_ids||[p.source_id]).includes(f.get('source')))&&
       (!f.get('topic')||p.topics.includes(f.get('topic')))&&(!f.get('unread')||!flagged(p));
    });
+   const counts=new Map();
+   for(const p of list){const day=publicationDay(p);if(day)counts.set(day,(counts.get(day)||0)+1);}
+   const days=[...counts].sort(([a],[b])=>b.localeCompare(a)).map(([date,count])=>({date,count}));
+   if(f.get('day'))list=list.filter(p=>publicationDay(p)===f.get('day'));
+   list.sort((a,b)=>publicationDay(b).localeCompare(publicationDay(a))||String(b.first_seen||'').localeCompare(String(a.first_seen||'')));
    const offset=Math.max(0,Number.parseInt(f.get('offset')||'0',10)||0);
-   return {publications:list.slice(offset,offset+50).map(p=>({...p,reviewed:flagged(p)})),total:list.length,offset,limit:50};
+   return {publications:list.slice(offset,offset+50).map(p=>({...p,reviewed:flagged(p)})),total:list.length,days,offset,limit:50};
   }
   throw Error('Это действие доступно через GitHub Actions');
  };
