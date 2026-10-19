@@ -3,7 +3,7 @@ const {createGitHubClient}=require('../github_static/github-client.js');
 async function main(){
  const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)};
  const data={schema:1,sources:[{id:'a',seeds:['https://example.org/']}],settings:{enabled_sources:['a']},topics:['ОМС'],publications:[],workflow_url:'https://github.com/LevshaMV/medpravo/actions/workflows/collect.yml'};
- for(let i=0;i<55;i++)data.publications.push({url:'https://example.org/'+i,title:'Приказ об ОМС '+i,relevance:'medical',source_id:'a',source_ids:['a','b'],topics:['ОМС'],source_page:'javascript:alert(1)',download_path:'../../private.txt'});
+ for(let i=0;i<55;i++)data.publications.push({url:'https://example.org/'+i,title:'Приказ об ОМС '+i,relevance:'medical',source_id:'a',source_ids:['a','b'],topics:['ОМС'],published_at:i<52?'2026-10-14':'2026-10-15',first_seen:'2026-10-19T10:00:00Z',source_page:'javascript:alert(1)',download_path:'../../private.txt'});
  data.publications.push({url:'javascript:alert(1)',title:'bad'});
  const urls=[];
  const fetch=async url=>{urls.push(String(url));return {ok:true,json:async()=>structuredClone(data),blob:async()=>Buffer.from('document')};};
@@ -11,9 +11,17 @@ async function main(){
  const state=await client('state');assert.equal(state.count,55);assert.equal(state.unread,55);
  let result=await client('publications?relevance=all&offset=50');assert.equal(result.publications.length,5);assert.equal(result.publications[0].source_page,null);assert.equal(result.publications[0].download_path,null);
  result=await client('publications?q=ПРИКАЗ&source=b&topic=ОМС');assert.equal(result.total,55);
+ assert.deepEqual(result.days,[{date:'2026-10-15',count:3},{date:'2026-10-14',count:52}]);
+ assert.equal(result.publications[0].published_at,'2026-10-15');
+ const dayPage=await client('publications?day=2026-10-14&offset=50&source=b&topic=ОМС&q=ПРИКАЗ');
+ assert.equal(dayPage.total,52);assert.equal(dayPage.publications.length,2);
+ assert.ok(dayPage.publications.every(p=>p.published_at==='2026-10-14'));
+ assert.equal((await client('publications?day=2026-10-19')).total,0); // Discovery date is not the document day.
+ assert.equal((await client('publications?day=not-a-date')).total,0);
  await client('review',{url:'https://example.org/0',reviewed:true});
  client=createGitHubClient('https://levshamv.github.io/medpravo/',fetch,storage);assert.equal((await client('state')).unread,54);
  assert.equal((await client('publications?unread=1')).total,54);
+ assert.equal((await client('publications?day=2026-10-14&unread=1')).total,51);
  await client('review',{url:'https://example.org/0',reviewed:false});assert.equal((await client('state')).unread,55);
  await assert.rejects(client.download('../../private.txt'),/не подготовлена/);
  const path='files/'+'a'.repeat(64)+'.zip';await client.download(path,'test.zip');
