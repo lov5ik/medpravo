@@ -205,7 +205,7 @@ def main():
         con.execute('UPDATE settings SET data=? WHERE id=1',(json.dumps({'enabled_sources':[s['id'] for s in cfg if s.get('enabled',True)]}),))
     if not args.export_only:
         # Bound runtime while preserving source queues for subsequent executions.
-        bounded=[{**s,'page_limit':max(min(s.get('page_limit',6),16),len(s['seeds'])+2),'document_limit':min(s.get('document_limit',100),80),'time_budget':s.get('github_time_budget',100)} for s in cfg]
+        bounded=[{**s,'page_limit':max(min(s.get('page_limit',6),16),len(s['seeds'])+2),'document_limit':min(s.get('github_document_limit',min(s.get('document_limit',100),80)),160),'time_budget':s.get('github_time_budget',100)} for s in cfg]
         original=m.catalog;m.catalog=lambda:bounded
         try:
             if args.retry_failed:
