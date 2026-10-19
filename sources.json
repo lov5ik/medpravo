@@ -48,11 +48,12 @@
     "group": "Федеральные",
     "description": "Порядки помощи, стандарты, лицензирование, анестезиология, педиатрия, стационар.",
     "seeds": [
-      "https://minzdrav.gov.ru/documents"
+      "https://minzdrav.gov.ru/documents?document_search%5Bissued_from%5D=01.10.2026&document_search%5Border%5D=date_desc"
     ],
     "allowed_domains": [
       "minzdrav.gov.ru",
-      "rosminzdrav.ru"
+      "rosminzdrav.ru",
+      "publication.pravo.gov.ru"
     ],
     "page_limit": 6,
     "document_limit": 100,
@@ -61,7 +62,20 @@
     "enabled": true,
     "time_budget": 120,
     "adapter": "html",
-    "allow_document_date": true
+    "allow_document_date": true,
+    "fallback_seeds": [
+      "http://publication.pravo.gov.ru/search?PublishDateSearchType=0&PublishDateFrom=01.10.2026&SortedBy=0&SortDestination=1&pageSize=100&SignatoryAuthorityId=a2b99d08-29c7-4a3f-901a-d1a7174428f8"
+    ],
+    "fallback_issuer_pattern": "Министерства здравоохранения Российской Федерации|Министерства здравоохранения и социального развития Российской Федерации",
+    "obsolete_seeds": [
+      "https://minzdrav.gov.ru/documents"
+    ],
+    "obsolete_prefixes": [
+      "https://minzdrav.gov.ru/documents?page="
+    ],
+    "github_document_limit": 120,
+    "github_time_budget": 180,
+    "transport_note": "Банк Минздрава проверяется по дате принятия с 01.10.2026. Официальный резерв отдельно проверяет новые публикации актов, в том числе подписанных раньше. Старые задания проверяются до установления даты публикации; дата обнаружения не подтверждает новизну."
   },
   {
     "id": "ffoms",
@@ -160,7 +174,10 @@
     "follow_patterns": [
       "^/page/(prikaz|normativ)"
     ],
-    "allow_document_date": true
+    "allow_document_date": true,
+    "excluded_sections": [
+      "/page/prikazy-o-nagrazhdenii/"
+    ]
   },
   {
     "id": "kaluga-gov",
@@ -456,7 +473,7 @@
     "id": "government",
     "name": "Правительство России",
     "group": "Федеральные",
-    "description": "Официальные документы. Сборщик требует проверки и настройки на вашем сервере.",
+    "description": "Официальные документы Правительства. Дата публикации берётся из карточки каталога; архивные страницы до 01.10.2026 не обходятся повторно.",
     "seeds": [
       "http://government.ru/docs/"
     ],
@@ -469,10 +486,12 @@
     "kind": "Документ",
     "enabled": true,
     "time_budget": 120,
-    "adapter": "html",
+    "adapter": "government",
     "ca_bundle": "russian-chain.pem",
     "transport_note": "Каталог доступен по официальному HTTP-адресу; HTTPS из этой сети недоступен.",
-    "allow_document_date": true
+    "allow_document_date": true,
+    "github_document_limit": 160,
+    "github_time_budget": 180
   },
   {
     "id": "mintrud",
