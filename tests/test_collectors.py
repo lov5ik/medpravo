@@ -95,6 +95,36 @@ class CollectorTests(unittest.TestCase):
         response={**self.content(),'text':'<html>Unavailable</html>'}
         with patch.object(monitor,'fetch',return_value=response):result=monitor.scan_source(source)
         self.assertEqual(result['status'],'blocked')
+
+    def test_old_pending_tfoms_files_and_software_manual_do_not_retry_forever(self):
+        source=next(s for s in monitor.catalog() if s['id']=='tfoms')
+        with monitor.connection() as con:
+            for path,title in [('old.pdf','Приказ ТФОМС Калужской области от 24.03.2026 №38'),('manual.rar','Документация VipNet клиент версия 4')]:
+                con.execute('INSERT INTO pending_documents(source_id,url,title,created_at) VALUES (?,?,?,?)',(source['id'],'https://oms-kaluga.ru/files/'+path,title,monitor.now()))
+        with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',return_value=self.content('')) as fetch:
+            result=monitor.scan_source(source)
+        self.assertEqual(result['pending'],0)
+        self.assertFalse(any('/files/' in call.args[0] for call in fetch.call_args_list))
+
+    def test_municipal_attachment_queue_is_replaced_by_dated_act_cards(self):
+        source=next(s for s in monitor.catalog() if s['id']=='kaluga-city')
+        with monitor.connection() as con:
+            for i in range(100):
+                con.execute('INSERT INTO pending_documents(source_id,url,title,created_at) VALUES (?,?,?,?)',(source['id'],'https://www.kaluga-gov.ru/upload/'+str(i)+'.doc','Скачать',monitor.now()))
+        listing=self.content('<div class="news-item"><div class="news-item-date">16 октября 2026</div><h3><a href="/administratsiya/zakonotvorchestvo/munitsipalnye-pravovye-akty/66734/">Постановление от 15.10.2026 № 1</a></h3><p>Об утверждении порядка медицинской помощи детям</p><a href="/upload/1.doc">Скачать</a></div>')
+        listing['url']=source['seeds'][0]
+        with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',side_effect=[listing,self.content('')]) as fetch:
+            result=monitor.scan_source(source)
+        self.assertEqual(result['pending'],0);self.assertEqual(result['added'],1);self.assertEqual(fetch.call_count,2)
+        row=monitor.list_publications({})['publications'][0]
+        self.assertEqual(row['published_at'],'2026-10-16');self.assertIn('медицинской помощи',row['title'])
+
+    def test_sorted_api_stops_at_confirmed_publication_cutoff(self):
+        source={**next(s for s in monitor.catalog() if s['id']=='clinrec'),'api_page_size':1,'page_limit':6}
+        response={**self.content(),'text':json.dumps({'Data':[{'CodeVersion':'123_1','Name':'Помощь детям','PublishDateStr':'2026-09-30','AgeCategoryStr':'Дети'}],'TotalRecords':500})}
+        with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',return_value=response) as fetch:
+            result=monitor.scan_source(source)
+        self.assertEqual(result['status'],'collected');self.assertEqual(fetch.call_count,1);self.assertEqual(result['added'],0)
     def test_miac_title_and_date_from_same_row(self):
         source=next(s for s in monitor.catalog() if s['id']=='kaluga-miac')
         found=adapters.miac_rows('<table><tr><td>21/05/2026</td><td><a href="/documents/2192" title="Скачать документ"></a><a href="/documents/2192">Приказ о медицинских услугах</a></td></tr></table>',source['seeds'][0],monitor.parse_page)
@@ -156,6 +186,26 @@ class CollectorTests(unittest.TestCase):
         with patch.object(transport.urllib.request,'build_opener',return_value=opener),patch.object(transport,'pace'):
             with self.assertRaises(urllib.error.URLError):monitor.fetch(self.candidate['url'],self.source)
         self.assertEqual(opener.open.call_count,1)
+
+    def test_verified_direct_fallback_after_relay_tls_failures(self):
+        from email.message import Message
+        from urllib.response import addinfourl
+        headers=Message();headers['Content-Type']='text/html; charset=utf-8'
+        primary=unittest.mock.Mock();primary.open.side_effect=urllib.error.URLError(ssl.SSLEOFError('synthetic relay EOF'))
+        direct=unittest.mock.Mock();direct.open.return_value=addinfourl(io.BytesIO(b'<main>official document</main>'),headers,self.candidate['url'],200)
+        with patch.dict(transport.os.environ,{'MEDPRAVO_HTTPS_PROXY':'http://127.0.0.1:8118'}),patch.object(transport,'proxy_protocols',return_value={'https':'http://127.0.0.1:8118'}),patch.object(transport.urllib.request,'build_opener',side_effect=[primary,direct]),patch.object(transport,'pace'),patch.object(transport.time,'sleep'):
+            result=monitor.fetch(self.candidate['url'],self.source)
+        self.assertEqual(primary.open.call_count,2);self.assertEqual(direct.open.call_count,1)
+        self.assertEqual(result['network_route'],'direct-fallback')
+        self.assertEqual(transport.context(self.source,monitor.ROOT).verify_mode,ssl.CERT_REQUIRED)
+
+    def test_municipal_old_publication_boundary_does_not_leave_permanent_page_queue(self):
+        source=next(s for s in monitor.catalog() if s['id']=='kaluga-city')
+        seed=source['seeds'][0]
+        with monitor.connection() as con:con.execute('INSERT OR REPLACE INTO source_cursor VALUES (?,?)',(source['id'],json.dumps([seed+'?PAGEN_1=22'])))
+        first={**self.content('<div class="news-item"><div class="news-item-date">30 сентября 2026</div><h3><a href="/administratsiya/zakonotvorchestvo/munitsipalnye-pravovye-akty/123/">Постановление от 29.09.2026 № 1</a></h3><p>О медицинской помощи</p></div><a href="?PAGEN_1=2">Далее</a>'),'url':seed}
+        with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',return_value=first) as fetch:result=monitor.scan_source(source)
+        self.assertEqual(fetch.call_count,1);self.assertEqual(result['pending'],0);self.assertEqual(result['status'],'collected')
     def test_portal_database_overload_is_retried_and_reported_clearly(self):
         def unavailable(*args,**kwargs):
             raise urllib.error.HTTPError(self.candidate['url'],500,'Internal Server Error',{},io.BytesIO(b'Mysql connect error: Too many connections'))
