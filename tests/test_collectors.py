@@ -15,6 +15,35 @@ class CollectorTests(unittest.TestCase):
     setUp=baseline.FeedTests.setUp
     tearDown=baseline.FeedTests.tearDown
     content=baseline.FeedTests.content
+    def test_official_reserve_verifies_authority_and_keeps_publication_date(self):
+        source=next(s for s in monitor.catalog() if s['id']=='rospotreb')
+        url=source['fallback_seeds'][0]
+        import urllib.parse
+        authority=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['SignatoryAuthorityId'][0]
+        page='<option selected="selected" value="'+authority+'">Ведомство</option><div class="documents-items"><a href="/document/0001202610020009">Приказ Федеральной службы по надзору в сфере защиты прав потребителей и благополучия человека от 17.08.2026 №644 о медицинской помощи</a><p>Дата опубликования: 02.10.2026</p></div>'
+        found,_=monitor.discover(page,url,source)
+        self.assertEqual(found[0]['published_at'],'2026-10-02')
+        self.assertFalse(adapters.validate_publication_reserve(page,url,source,found,monitor.parse_page))
+        with self.assertRaises(ValueError):adapters.validate_publication_reserve(page.replace(authority,'wrong'),url,source,found,monitor.parse_page)
+        with self.assertRaises(ValueError):adapters.validate_publication_reserve(page,url,source,[{**found[0],'title':'Приказ Минздрава о медицинской помощи'}],monitor.parse_page)
+    def test_reserve_does_not_hide_primary_failure_or_fake_full_collection(self):
+        import urllib.parse
+        source=next(s for s in monitor.catalog() if s['id']=='rospotreb')
+        def fetch(url,*args):
+            if url not in source['fallback_seeds']:raise OSError('primary unavailable')
+            authority=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['SignatoryAuthorityId'][0]
+            return {'type':'text','url':url,'text':'<option selected value="'+authority+'">Ведомство</option><p>Документы не найдены</p>'}
+        with patch.object(monitor,'fetch',side_effect=fetch):result=monitor.scan_source(source)
+        self.assertEqual(result['status'],'partial');self.assertEqual(result['pages'],2)
+        with monitor.connection() as con:
+            detail=con.execute('SELECT detail FROM sources WHERE id=?',(source['id'],)).fetchone()[0]
+            snapshots=con.execute('SELECT count(*) FROM source_readers WHERE source_id=?',(source['id'],)).fetchone()[0]
+        self.assertIn('официальный резерв',detail);self.assertIn('primary unavailable',detail)
+        self.assertEqual(snapshots,2)
+    def test_reserve_rejects_homepage_or_unconfirmed_empty_result(self):
+        source=next(s for s in monitor.catalog() if s['id']=='rospotreb')
+        with self.assertRaises(ValueError):adapters.validate_publication_reserve('Документы не найдены','http://publication.pravo.gov.ru/',source,[],monitor.parse_page)
+        with self.assertRaises(ValueError):adapters.validate_publication_reserve('Документы не найдены',source['fallback_seeds'][0],source,[],monitor.parse_page)
     def test_pending_documents_survive_missing_listing(self):
         listing=self.content('<a href="/documents/test">Приказ о медицинской помощи детям</a>')
         with patch.object(monitor,'fetch',side_effect=[listing,OSError('temporary')]):monitor.scan_source(self.source)
