@@ -17,6 +17,8 @@ def candidate_key(candidate):
 
 def scan_source(namespace,source):
     m=SimpleNamespace(**namespace)
+    def excluded_section(url):
+        return urllib.parse.urlsplit(url or '').path.rstrip('/') in {p.rstrip('/') for p in source.get('excluded_sections',[])}
     with m.connection() as con:
         previous=con.execute('SELECT * FROM sources WHERE id=?',(source['id'],)).fetchone()
         cursor=con.execute('SELECT queue FROM source_cursor WHERE source_id=?',(source['id'],)).fetchone()
@@ -27,7 +29,7 @@ def scan_source(namespace,source):
     seed_offset=(seed_cursor[0] if seed_cursor and source.get('adapter') not in ('clinrec','projects') else 0)%len(configured_roots)
     roots=configured_roots[seed_offset:]+configured_roots[:seed_offset]
     queue=list(dict.fromkeys(m.canonical(url) for url in roots+(json.loads(cursor[0]) if cursor else [])))
-    queue=[url for url in queue if url not in source.get('obsolete_seeds',[]) and not any(url.startswith(p) for p in source.get('obsolete_prefixes',[]))]
+    queue=[url for url in queue if not excluded_section(url) and url not in source.get('obsolete_seeds',[]) and not any(url.startswith(p) for p in source.get('obsolete_prefixes',[]))]
     visited,failures,failed_pages=set(),[],[]
     found_count,pages_read,added,excluded,date_excluded=0,0,0,0,0
     page_limit,doc_limit=source.get('page_limit',6),source.get('document_limit',100)
@@ -37,14 +39,19 @@ def scan_source(namespace,source):
     position=0
     limited=False
     valid_empty=False
+    api_more=False
     routes=set()
     reserve_read=False
     past_pages={}
+    page_key='page' if source.get('adapter')=='government' else 'PAGEN_1'
+    def page_number(url):
+        return int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get(page_key,['1'])[0])
     def remember(found):
         nonlocal found_count,excluded
         found_count+=len(found)
         with m.connection() as con:
             for c in found:
+                if excluded_section(c['url']) or excluded_section(c.get('source_page')):excluded+=1;continue
                 if c.get('published_at'):c['published_at']=m.normalized_date(c['published_at'])
                 if not c.get('published_at') and source.get('allow_document_date'):
                     day=m.document_metadata.document_date(c['title'])
@@ -90,7 +97,7 @@ def scan_source(namespace,source):
                     import date_policy
                     days=[date_policy.date(m.normalized_date(p.get('published_at'))) for p in found]
                     if all(day and day<date_policy.SINCE for day in days):has_more=False
-                limited=has_more
+                limited=has_more;api_more=has_more
                 valid_empty=not found and total==0
                 with m.connection() as con:
                     con.execute('INSERT OR REPLACE INTO api_cursor VALUES (?,?)',(source['id'],position+1 if has_more else 0))
@@ -116,21 +123,23 @@ def scan_source(namespace,source):
                 if source.get('adapter')=='grls':found,pages=adapters.grls_rows(result['text'],result['url'],m.parse_page)
                 if source.get('adapter')=='duma':found,pages=adapters.duma_rows(result['text'],result['url'],m.parse_page)
                 if source.get('adapter')=='municipal':found=adapters.municipal_rows(result['text'],result['url'],m.parse_page)
-                if source.get('adapter')=='municipal' and namespace.get('PUBLICATION_SINCE') and found:
+                if source.get('adapter')=='government':found=adapters.government_rows(result['text'],result['url'],m.parse_page)
+                if source.get('adapter') in ('municipal','government') and namespace.get('PUBLICATION_SINCE') and found:
                     import date_policy
                     days=[date_policy.date(p.get('published_at')) for p in found]
                     if all(day and day<date_policy.SINCE for day in days):
-                        value=urllib.parse.urlsplit(url);number=int(urllib.parse.parse_qs(value.query).get('PAGEN_1',['1'])[0])
+                        value=urllib.parse.urlsplit(url);number=page_number(url)
                         past_pages[value.path]=min(number,past_pages.get(value.path,number));pages=[]
                 source_reader.remember(m.connection,source,url,result['text'],found,m.now(),m.permitted,m.parse_page)
                 if source['id']=='pravo' and not found and re.search(r'не найден|не обнаружен',m.parse_page(result['text']).visible,re.I):valid_empty=True
+                if source['id']=='minzdrav' and not found and re.search(r'Всего документов:\s*0\b',m.parse_page(result['text']).visible,re.I):valid_empty=True
                 if source.get('adapter')=='rostrud' and not found:
                     if re.search(r'class="b-listing-link"',result['text']) and re.search(r'<h1[^>]*>Переч(?:ень|ни)',result['text']):valid_empty=True
                 for candidate in found:candidate.setdefault('source_page',result['url'])
                 remember(found);pages_read+=1
-                queue.extend(p for p in pages if p not in visited and p not in queue)
+                queue.extend(p for p in pages if p not in visited and p not in queue and not excluded_section(p))
                 if past_pages:
-                    queue=[p for p in queue if urllib.parse.urlsplit(p).path not in past_pages or int(urllib.parse.parse_qs(urllib.parse.urlsplit(p).query).get('PAGEN_1',['1'])[0])<past_pages[urllib.parse.urlsplit(p).path]]
+                    queue=[p for p in queue if urllib.parse.urlsplit(p).path not in past_pages or page_number(p)<past_pages[urllib.parse.urlsplit(p).path]]
             except Exception as exc:
                 failures.append(type(exc).__name__+': '+str(exc)[:220])
                 failed_pages.append(url)
@@ -153,7 +162,7 @@ def scan_source(namespace,source):
                 import date_policy
                 day=date_policy.date(row['published_at'] or m.document_metadata.document_date(row['title']))
                 old_binary=bool(day and day<date_policy.SINCE)
-            if invalid_path or old_binary or not relevance.should_fetch(row['title'],source):
+            if excluded_section(row['url']) or excluded_section(row['source_page']) or invalid_path or old_binary or not relevance.should_fetch(row['title'],source):
                 con.execute('DELETE FROM pending_documents WHERE source_id=? AND url=?',(source['id'],row['url']))
                 if old_binary:date_excluded+=1
                 else:excluded+=1
@@ -198,8 +207,12 @@ def scan_source(namespace,source):
     if date_excluded:detail+=f'Не добавлено из-за даты публикации: {date_excluded}. '
     detail+='Проверены только настроенные разделы. '
     if reserve_read:
-        detail+='Прочитан официальный резерв: акты Роспотребнадзора и Главного санитарного врача на портале правовой информации. Ведомственные письма и разъяснения на основном сайте могут быть недоступны. '
-    if limited:detail+=f'Обход продолжится: страниц каталога в очереди — {len(queue)}; документов — {remaining}. '
+        detail+='Прочитан официальный резерв нормативных актов на портале правовой информации. Он не заменяет ведомственные письма и разъяснения на основном сайте. '
+    if limited:
+        if api_kind:
+            if api_more:detail+=f'Обход API продолжится со страницы {position+2}. '
+            if remaining:detail+=f'Документов в очереди — {remaining}. '
+        else:detail+=f'Обход продолжится: страниц каталога в очереди — {len(queue)}; документов — {remaining}. '
     if status=='needs_adapter':detail+='Каталог не прочитан: отсутствие новых публикаций не подтверждено. '
     if valid_empty and not found_count:detail+='Настроенный каталог прочитан; по этому запросу документов нет. '
     if failures:detail+='Ошибки: '+'; '.join(failures[:3])
