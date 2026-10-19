@@ -597,8 +597,11 @@
     "kind": "Документ",
     "enabled": true,
     "time_budget": 120,
-    "adapter": "html",
-    "allow_document_date": true
+    "adapter": "municipal",
+    "allow_document_date": true,
+    "publication_paths": [
+      "/administratsiya/zakonotvorchestvo/munitsipalnye-pravovye-akty/\\d+/?$"
+    ]
   },
   {
     "id": "kaluga-miac",
