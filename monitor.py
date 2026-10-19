@@ -83,13 +83,19 @@ def canonical(url):
     value = urllib.parse.urlsplit(url)
     query = urllib.parse.parse_qsl(value.query, keep_blank_values=True)
     query = [(k,v) for k,v in query if not k.startswith("utm_") and k not in ("ysclid",)]
+    query = [(k,v) for k,v in query if v or not re.fullmatch(r'page|index|PAGEN_\d+',k,re.I)]
+    if (value.hostname or '').endswith('rospotrebnadzor.ru'):
+        # Public pagination must not inherit Bitrix admin-return URLs or old
+        # portal UI session parameters from the source's navigation widgets.
+        query=[(k,v) for k,v in query if k!='back_url_admin' and not k.startswith('_49_') and (v or not k.startswith('arrFilter_'))]
+        if not any(k.startswith('arrFilter_') for k,v in query):query=[(k,v) for k,v in query if k!='set_filter']
     return urllib.parse.urlunsplit((value.scheme, value.netloc.lower(), urllib.parse.quote(value.path,safe="/%:@!$&'()*+,;=-._~"), urllib.parse.urlencode(query), ""))
 
 def permitted(url, source):
     try:
         value = urllib.parse.urlsplit(url)
         hostname = value.hostname or ""
-        return value.scheme in ("http", "https") and not value.username and not value.password and value.port in (None,80,443) and any(hostname == d or hostname.endswith("." + d) for d in source["allowed_domains"])
+        return value.scheme in ("http", "https") and not value.username and not value.password and value.port in (None,80,443) and not value.path.startswith('/bitrix/admin/') and any(hostname == d or hostname.endswith("." + d) for d in source["allowed_domains"])
     except ValueError:
         return False
 
