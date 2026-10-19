@@ -21,5 +21,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y yandex-browser-stable xvfb
           python -m pip install playwright==1.64.0
+      - name: Подключить существующий российский узел
+        id: relay
+        if: ${{ vars.MEDPRAVO_RELAY_HOST != '' }}
+        env:
+          RELAY_HOST: ${{ vars.MEDPRAVO_RELAY_HOST }}
+          RELAY_PRIVATE_KEY: ${{ secrets.MEDPRAVO_RELAY_KEY }}
+          RELAY_KNOWN_HOSTS: ${{ secrets.MEDPRAVO_RELAY_KNOWN_HOSTS }}
+        run: python github_relay.py start
       - name: Проверить каталоги через настоящий Яндекс Браузер
+        env:
+          MEDPRAVO_HTTPS_PROXY: ${{ steps.relay.outputs.proxy_url }}
+          PROBE_SOURCE_IDS: rospotreb
         run: xvfb-run -a python yandex_probe.py
+      - name: Закрыть временное соединение
+        if: ${{ always() && vars.MEDPRAVO_RELAY_HOST != '' }}
+        run: python github_relay.py stop
