@@ -139,6 +139,7 @@ def export_site(site,repository='',archive=True,persist=None,archive_budget=90):
     sources=[]
     for s in state['sources']:
         sources.append({k:s.get(k) for k in ('id','name','group','description','seeds','homepage','status','detail','checked_at','last_success','enabled','transport_note','network_origin')})
+        if s.get('fallback_seeds'):sources[-1]['fallback_seeds']=s['fallback_seeds']
     for s in sources:
         if not s['homepage']:
             value=urllib.parse.urlsplit(s['seeds'][0]);s['homepage']=urllib.parse.urlunsplit((value.scheme,value.netloc,'/','',''))
