@@ -41,6 +41,7 @@ def evaluate(title,text,source):
     title=' '.join((title or '').split())
     sid=source['id']
     def result(scope,topics,reason):return {'relevance':scope,'topics':topics,'reason':reason,'version':VERSION}
+    if sid=='tfoms' and matches(r'^Федерального\s+закона\s+№\s*\d+[-–]ФЗ$',title):return result('other',[],'Ссылка на упоминаемый закон в справочном описании работы фонда, а не карточка новой публикации')
     if matches(r'^(?:документаци\w*|дистрибутив\w*|инструкци\w*\s+по\s+установк\w*).{0,60}(?:vipnet|випнет)',title):return result('other',[],'Документация программы, а не новый нормативный акт')
     if matches(INTERNAL,title) or matches(r'главн\w*\s+администратор\w*\s+(?:доход|источник\w*\s+финансирован)',title):return result('other',[],'Внутренние правила государственного органа, а не требования к медицинскому центру')
     if matches(ADMIN,title) or matches(r'санитарн\w*\s+охран\w*\s+курорт\w*.{0,80}(?:анап|сочи)',title):return result('other',[],'Организация работы ведомства или мероприятие вне задач центра')
