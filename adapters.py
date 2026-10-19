@@ -9,6 +9,27 @@ import xml.etree.ElementTree as ET
 import document_metadata
 
 
+def validate_publication_reserve(text,base,source,found,parse_page):
+    """The official publisher must confirm the requested issuing authority."""
+    u=urllib.parse.urlsplit(base)
+    configured={urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('SignatoryAuthorityId',[''])[0]
+                for url in source.get('fallback_seeds',[])}
+    authority=urllib.parse.parse_qs(u.query).get('SignatoryAuthorityId',[''])[0]
+    if u.hostname!='publication.pravo.gov.ru' or not authority or authority not in configured:
+        raise ValueError('Резервный каталог не подтвердил орган, принявший акт')
+    selected=[]
+    for tag in re.findall(r'<option\b[^>]*>',text,re.I):
+        attrs=document_metadata.attrs(tag)
+        if re.search(r'\bselected(?:\s|=|>)',tag,re.I):selected.append(attrs.get('value'))
+    if authority not in selected:raise ValueError('Портал не подтвердил фильтр по органу')
+    expected=r'Федеральной службы по надзору в сфере защиты прав потребителей|Главного государственного санитарного врача Российской Федерации'
+    if any(not re.search(expected,p['title'],re.I) for p in found):
+        raise ValueError('Резерв вернул акты другого ведомства')
+    empty=not found and bool(re.search(r'не найден|не обнаружен',parse_page(text).visible,re.I))
+    if not found and not empty:raise ValueError('В резервном каталоге не подтверждены документы или пустой результат')
+    return empty
+
+
 def municipal_rows(text,base,parse_page):
     """Keep the act card, its publication date and subject together, not generic file buttons."""
     found=[]
