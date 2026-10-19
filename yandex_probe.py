@@ -14,6 +14,7 @@ import time
 import urllib.request
 from playwright.sync_api import sync_playwright
 import monitor as m
+import transport
 
 IDS={'ffoms','tfoms','kaluga-health','kaluga-gov','rospotreb','kaluga-rospotreb','rostrud','rkn','fas'}
 DENIED=r'Доступ из вашего региона запрещ|Access Denied|Forbidden|ERR_CONNECTION|ERR_CERT|ERR_TIMED_OUT|cannot be reached|Не удается получить доступ'
@@ -44,10 +45,12 @@ def main():
     if not browser:raise SystemExit('Yandex Browser is not installed')
     print(subprocess.check_output([browser,'--version'],text=True).strip(),flush=True)
     results=[];control=None
+    proxy=transport.relay_url(os.environ.get('MEDPRAVO_HTTPS_PROXY',''))
+    ids=set(filter(None,os.environ.get('PROBE_SOURCE_IDS','').split(','))) or IDS
     with tempfile.TemporaryDirectory() as profile:
         env={k:v for k,v in os.environ.items() if k in ('PATH','HOME','LANG','LC_ALL','DISPLAY','XAUTHORITY','XDG_RUNTIME_DIR')}
         with open(Path(profile)/'browser.log','w+',encoding='utf-8') as log:
-            process=subprocess.Popen([browser,'--no-first-run','--user-data-dir='+profile,
+            process=subprocess.Popen([browser,'--no-first-run','--user-data-dir='+profile]+(['--proxy-server='+proxy,'--proxy-bypass-list=<-loopback>'] if proxy else [])+[
                 '--remote-debugging-address=127.0.0.1','--remote-debugging-port=9222','about:blank'],
                 stdout=log,stderr=log,env=env,start_new_session=True)
             try:
@@ -66,7 +69,7 @@ def main():
                     control=probe(context,{'id':'positive-control','seeds':['https://minzdrav.gov.ru/']},True)
                     if not control['ok']:raise RuntimeError('Positive control failed; site access cannot be assessed')
                     for source in m.catalog():
-                        if source['id'] in IDS:results.append(probe(context,source))
+                        if source['id'] in ids:results.append(probe(context,source))
                     instance.close()
             finally:
                 with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
