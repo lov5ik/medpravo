@@ -22,12 +22,27 @@ def validate_publication_reserve(text,base,source,found,parse_page):
         attrs=document_metadata.attrs(tag)
         if re.search(r'\bselected(?:\s|=|>)',tag,re.I):selected.append(attrs.get('value'))
     if authority not in selected:raise ValueError('Портал не подтвердил фильтр по органу')
-    expected=r'Федеральной службы по надзору в сфере защиты прав потребителей|Главного государственного санитарного врача Российской Федерации'
+    expected=source.get('fallback_issuer_pattern') or r'Федеральной службы по надзору в сфере защиты прав потребителей|Главного государственного санитарного врача Российской Федерации'
     if any(not re.search(expected,p['title'],re.I) for p in found):
         raise ValueError('Резерв вернул акты другого ведомства')
     empty=not found and bool(re.search(r'не найден|не обнаружен',parse_page(text).visible,re.I))
     if not found and not empty:raise ValueError('В резервном каталоге не подтверждены документы или пустой результат')
     return empty
+
+
+def government_rows(text,base,parse_page):
+    """Each government news card dates its own publication, independently of signing."""
+    rows=[]
+    for block in re.split(r'<div\b(?=[^>]*\bclass=["\']headline(?:\s|["\']))[^>]*>',text,flags=re.I)[1:]:
+        stamp=re.search(r'<span\b[^>]*class=["\']headline_date["\'][^>]*>\s*<time\b([^>]*)>',block,re.I|re.S)
+        if not stamp:continue
+        day=document_metadata.normalize(document_metadata.attrs(stamp[1]).get('datetime'))
+        for href,title in parse_page(block).links:
+            if not re.fullmatch(r'/docs/\d+/?',urllib.parse.urlsplit(href).path):continue
+            if not re.search(r'\b(?:постановлен|распоряжен|закон|приказ)\w*\b',title,re.I):continue
+            rows.append({'url':urllib.parse.urljoin(base,href),'title':titles.clean(title),'published_at':day,
+                         'date_basis':'Дата публикации в ленте Правительства России','source_page':base})
+    return rows
 
 
 def municipal_rows(text,base,parse_page):
