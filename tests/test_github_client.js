@@ -45,6 +45,11 @@ async function main(){
  assert.equal(readers.publications[1].reader_path,null);
  assert.equal(readers.sources[0].reader_path,'readers/sources/tfoms.html');
  assert.equal(readers.sources[1].reader_path,null);
+ data.sources[0].fallback_seeds=['http://publication.pravo.gov.ru/search?test=1','javascript:alert(1)','https://owner:secret@example.org/'];
+ data.sources[1].fallback_seeds='not an array';
+ const reserves=await client('state');
+ assert.deepEqual(reserves.sources[0].fallback_seeds,['http://publication.pravo.gov.ru/search?test=1']);
+ assert.deepEqual(reserves.sources[1].fallback_seeds,[]);
  await client('review',{url:projectURL,reviewed:true});
  assert.ok((await client('publications?source=regulation')).publications[0].reviewed);
  // Model output is untrusted: exercise the real digest renderer without a browser or network.
