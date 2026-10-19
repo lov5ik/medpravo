@@ -34,6 +34,21 @@ class GitHubTests(unittest.TestCase):
         page=(self.root/'site/index.html').read_text(encoding='utf-8')
         self.assertIn('./github-client.js',page);self.assertNotIn('href="/style.css"',page)
         self.assertIn('/actions/workflows/collect.yml',data['workflow_url'])
+
+    def test_retry_failed_keeps_full_collection_time_and_skips_healthy_sources(self):
+        finished='2026-10-15T12:00:00+00:00'
+        with c.m.connection() as con:
+            con.execute("INSERT INTO runs VALUES ('full',?,?,?)",('2026-10-15T11:00:00+00:00',finished,'[]'))
+            con.execute("UPDATE sources SET status='collected'")
+            con.execute("UPDATE sources SET status='blocked' WHERE id IN ('rospotreb','pravo-text')")
+        with patch.object(c.m,'scan_source',side_effect=lambda s:{'source':s['id'],'status':'collected'}) as scan,patch.object(c.m,'scan',side_effect=AssertionError('No full scan needed')):
+            rows=c.retry_failed_sources(c.m.catalog())
+        self.assertEqual({r['source'] for r in rows},{'rospotreb','pravo-text'});self.assertEqual(scan.call_count,2)
+        self.assertEqual(c.export_site(self.root/'site','lov5ik/medpravo',archive=False)['last_checked_at'],finished)
+        with c.m.connection() as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM runs').fetchone()[0],1)
+            con.execute("UPDATE sources SET status='collected'")
+        with patch.object(c.m,'scan_source',side_effect=AssertionError('All sources already reachable')):self.assertEqual(c.retry_failed_sources(c.m.catalog()),[])
     def test_state_restore_keeps_queue_dates_and_history_without_cache_or_reviews(self):
         with c.m.connection() as con:
             con.execute('UPDATE publications SET reviewed=1')
