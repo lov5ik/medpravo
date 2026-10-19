@@ -23,7 +23,8 @@ class FeedTests(unittest.TestCase):
         self.previous=monitor.DATA
         monitor.DATA=Path(self.tmp.name)
         monitor.initialize()
-        self.source=next(s for s in monitor.catalog() if s['id']=='minzdrav')
+        # Generic feed tests use one catalog. Reserve routes are tested separately.
+        self.source={**next(s for s in monitor.catalog() if s['id']=='minzdrav'),'seeds':['https://minzdrav.gov.ru/documents'],'fallback_seeds':[],'obsolete_seeds':[],'obsolete_prefixes':[]}
         self.candidate={'url':'https://minzdrav.gov.ru/documents/test','title':'Приказ о медицинской помощи детям','published_at':'2026-10-14'}
     def tearDown(self):
         monitor.DATA=self.previous
