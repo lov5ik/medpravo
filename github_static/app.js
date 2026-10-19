@@ -3,7 +3,7 @@ let current=null,view=(["publications","digests","sources","settings","help"].in
 const filters={q:"",source:"",topic:"",relevance:"medical",unread:""};
 const $=id=>document.getElementById(id);
 const escape=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const labels={pending:"Ещё не проверен",blocked:"Ошибка доступа",needs_adapter:"Нужна настройка",partial:"Частичный сбор",collected:"Разделы обработаны"};
+const labels={pending:"Ещё не проверен",blocked:"Ошибка доступа",needs_adapter:"Нужна настройка",partial:"Сбор продолжается",collected:"Разделы обработаны"};
 const date=value=>value?new Intl.DateTimeFormat("ru-RU",{dateStyle:"medium",timeZone:"Europe/Moscow"}).format(new Date(value.length===10?value+"T00:00:00+03:00":value)):"не указана";
 const api=createGitHubClient(window.location.href,window.fetch.bind(window),window.localStorage);
 function message(text,error=false){$("message").innerHTML='<div class="alert '+(error?"error":"")+'">'+escape(text)+'</div>';}
