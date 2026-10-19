@@ -15,6 +15,38 @@ class CollectorTests(unittest.TestCase):
     setUp=baseline.FeedTests.setUp
     tearDown=baseline.FeedTests.tearDown
     content=baseline.FeedTests.content
+    def test_awards_section_is_removed_from_frontier_and_pending_without_losing_history(self):
+        source=next(s for s in monitor.catalog() if s['id']=='kaluga-health');seed=source['seeds'][0]
+        awards='https://minzdrav.admoblkaluga.ru/page/prikazy-o-nagrazhdenii/'
+        monitor.store_publication(self.source,self.candidate,self.content(),False)
+        with monitor.connection() as con:
+            con.execute('INSERT OR REPLACE INTO source_cursor VALUES (?,?)',(source['id'],json.dumps([awards])))
+            con.execute('INSERT INTO pending_documents(source_id,url,title,source_page,created_at) VALUES (?,?,?,?,?)',(source['id'],'https://minzdrav.admoblkaluga.ru/upload/award.pdf','Скачать',awards,monitor.now()))
+        with patch.object(monitor,'fetch',return_value={**self.content('<a href="'+awards+'">Приказы о награждении</a>'),'url':seed}) as fetch:result=monitor.scan_source(source)
+        self.assertEqual(result['pending'],0);self.assertFalse(any(call.args[0]==awards or 'award.pdf' in call.args[0] for call in fetch.call_args_list))
+        self.assertEqual(monitor.list_publications({})['total'],1)
+        with monitor.connection() as con:self.assertNotIn(awards,json.loads(con.execute('SELECT queue FROM source_cursor WHERE source_id=?',(source['id'],)).fetchone()[0]))
+    def test_government_publication_day_is_not_the_signing_date(self):
+        text='<div class="headline"><span class="headline_date"><time datetime="2026-10-14T11:00:00+04:00">14 октября</time></span><a href="/docs/12345/">Об оказании медицинской помощи. Распоряжение от 20 сентября 2026 года №1</a></div>'
+        found=adapters.government_rows(text,'http://government.ru/docs/',monitor.parse_page)
+        self.assertEqual(found[0]['published_at'],'2026-10-14')
+        self.assertIn('Дата публикации',found[0]['date_basis'])
+    def test_government_confirmed_old_page_does_not_crawl_deeper_archive(self):
+        source=next(s for s in monitor.catalog() if s['id']=='government');seed=source['seeds'][0]
+        with monitor.connection() as con:con.execute('INSERT OR REPLACE INTO source_cursor VALUES (?,?)',(source['id'],json.dumps([seed+'?page=24'])))
+        text='<div class="headline"><span class="headline_date"><time datetime="2026-09-30T11:00:00+03:00">30 сентября</time></span><a href="/docs/12345/">Постановление о медицинской помощи от 29 сентября 2026 года №1</a></div><a href="?page=2">Далее</a>'
+        with patch.dict(monitor.__dict__,PUBLICATION_SINCE='2026-10-01'),patch.object(monitor,'fetch',return_value={**self.content(text),'url':seed}) as fetch:result=monitor.scan_source(source)
+        self.assertEqual(fetch.call_count,1);self.assertEqual(result['pending'],0)
+        with monitor.connection() as con:self.assertEqual(json.loads(con.execute('SELECT queue FROM source_cursor WHERE source_id=?',(source['id'],)).fetchone()[0]),[])
+    def test_minzdrav_reserve_accepts_its_own_authority_and_rejects_rospotreb(self):
+        import urllib.parse
+        source=next(s for s in monitor.catalog() if s['id']=='minzdrav');url=source['fallback_seeds'][0]
+        query=urllib.parse.parse_qs(urllib.parse.urlsplit(source['seeds'][0]).query)
+        self.assertEqual(query['document_search[issued_from]'],['01.10.2026'])
+        authority=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['SignatoryAuthorityId'][0]
+        text='<option selected value="'+authority+'">Минздрав</option>'
+        self.assertFalse(adapters.validate_publication_reserve(text,url,source,[{'title':'Приказ Министерства здравоохранения Российской Федерации от 01.10.2026 №1'}],monitor.parse_page))
+        with self.assertRaises(ValueError):adapters.validate_publication_reserve(text,url,source,[{'title':'Приказ Роспотребнадзора от 01.10.2026 №1'}],monitor.parse_page)
     def test_official_reserve_verifies_authority_and_keeps_publication_date(self):
         source=next(s for s in monitor.catalog() if s['id']=='rospotreb')
         url=source['fallback_seeds'][0]
