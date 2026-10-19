@@ -106,7 +106,10 @@ def fetch(url,source,root,connection,permitted,canonical,redirect,payload=None):
                 return self.do_open(functools.partial(network.DirectHTTPConnection,interface_index=interface),request)
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),redirect(source),DirectHTTPHandler(),DirectHTTPSHandler(context=tls))
     else:opener=urllib.request.build_opener(redirect(source),urllib.request.HTTPSHandler(context=tls))
-    for attempt in range(2):
+    direct_opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),redirect(source),urllib.request.HTTPSHandler(context=tls)) if proxy else None
+    route='primary'
+    attempts=3 if proxy else 2
+    for attempt in range(attempts):
         pace(urllib.parse.urlsplit(url).hostname)
         try:
             response=opener.open(urllib.request.Request(url,data=data,headers=headers),
@@ -120,12 +123,17 @@ def fetch(url,source,root,connection,permitted,canonical,redirect,payload=None):
                 snippet=exc.read(4096).decode('utf-8',errors='replace')
                 if 'Too many connections' in snippet:
                     exc.msg='Сайт источника временно перегружен: превышен лимит соединений с его базой данных. Проверка будет повторена.'
-            if exc.code not in (500,502,503,504) or attempt:raise
+            if exc.code not in (500,502,503,504) or attempt==attempts-1:raise
         except urllib.error.URLError as exc:
-            if isinstance(exc.reason,ssl.SSLCertVerificationError) or attempt:raise
+            if attempt==attempts-1:raise
+            if isinstance(exc.reason,ssl.SSLCertVerificationError) and not proxy:raise
         except (TimeoutError,ConnectionError,http.client.RemoteDisconnected):
-            if attempt:raise
-        if attempt==0:time.sleep(0.5)
+            if attempt==attempts-1:raise
+        if proxy and attempt==1:
+            # Same approved source and mandatory TLS verification, different route.
+            # A failed relay connection must not take down an otherwise reachable site.
+            opener=direct_opener;route='direct-fallback'
+        time.sleep(0.5)
     with response:
         raw=response.read(MAX_BYTES+1)
         if len(raw)>MAX_BYTES:raise ValueError('Документ больше 20 МБ')
@@ -138,6 +146,7 @@ def fetch(url,source,root,connection,permitted,canonical,redirect,payload=None):
         final=canonical(response.url)
         etag,modified=response.headers.get('ETag'),response.headers.get('Last-Modified')
     result=decode(raw,content_type,charset,final)
+    result['network_route']=route
     if payload is None and result['type']=='text' and len(raw)<2*1024*1024:
         with connection() as con:
             con.execute('INSERT OR REPLACE INTO http_cache VALUES (?,?,?,?,?,?,?,?)',
