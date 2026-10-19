@@ -15,6 +15,10 @@ on:
         description: 'Сформировать ИИ-сводку (до 18:00 — предварительную)'
         type: boolean
         default: false
+      retry_failed:
+        description: 'Повторить только недоступные источники'
+        type: boolean
+        default: false
 
 concurrency:
   group: medpravo-collection
@@ -63,11 +67,14 @@ jobs:
           MEDPRAVO_OCR_ENABLED: '1'
           MEDPRAVO_WORKERS: '3'
           EXPORT_ONLY: ${{ inputs.publish_only == true || github.event.schedule == '0 15 * * *' }}
+          RETRY_FAILED: ${{ inputs.retry_failed == true }}
           MEDPRAVO_HTTPS_PROXY: ${{ steps.relay.outputs.proxy_url }}
           MEDPRAVO_NETWORK_ORIGIN: ${{ steps.relay.outputs.proxy_url != '' && 'GitHub Actions через российский SSH-релей' || 'GitHub Actions' }}
         run: |
           if [ "$EXPORT_ONLY" = "true" ]; then
             python github_collect.py --export-only
+          elif [ "$RETRY_FAILED" = "true" ]; then
+            python github_collect.py --retry-failed
           else
             python github_collect.py
           fi
