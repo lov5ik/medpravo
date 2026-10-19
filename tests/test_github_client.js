@@ -67,7 +67,7 @@ async function main(){
  vm.runInContext(fs.readFileSync(filePath.join(__dirname,'../github_static/app.js'),'utf8').split('const api=')[0],sandbox);
  vm.runInContext(fs.readFileSync(filePath.join(__dirname,'../github_static/digest.js'),'utf8'),sandbox);
  const digestReport={date:'2026-10-15',generated_at:'2026-10-15T15:05:00Z',scheduled_for:'2026-10-15T18:00:00+03:00',period_start:'2026-10-14T18:00:00+03:00',period_end:'2026-10-15T18:00:00+03:00',status:'complete',total:1,analyzed:1,source_issues:[],items:[{url:'javascript:alert(1)',title:'Проект',category:'Проект',topics:['ОМС'],analysis:{summary:'<img src=x onerror=alert(1)>',why:'<script>alert(1)</script>',check:'Сверить оригинал',evidence:'<a href="javascript:alert(1)">Цитата</a>'}}]};
- sandbox.fixture={digests:{reports:[{...digestReport,date:'2026-10-14',status:'empty',items:[],total:0,analyzed:0},digestReport]}};
+ sandbox.fixture={sources:[{id:'a',status:'collected'},{id:'b',status:'partial'}],settings:{enabled_sources:['a','b']},last_checked_at:'2026-10-19T10:41:42Z',digests:{reports:[{...digestReport,date:'2026-10-14',status:'empty',items:[],total:0,analyzed:0},digestReport]}};
  vm.runInContext('renderDigestView(fixture)',sandbox);
  assert.ok(elements.body.innerHTML.includes('&lt;img'));
  assert.ok(!elements.body.innerHTML.includes('<img'));
@@ -75,6 +75,9 @@ async function main(){
  assert.ok(!elements.body.innerHTML.includes('href="javascript:'));
  assert.ok(elements.body.innerHTML.includes('Это проект.'));
  assert.ok(elements.body.innerHTML.includes('value="2026-10-14"'));
+ assert.ok(elements.body.innerHTML.includes('Текущие статусы источников: 2 / 2'));
+ assert.ok(elements.body.innerHTML.includes('На момент этой сводки: 0 / 0'));
+ assert.ok(elements.body.innerHTML.includes('сохранённые статусы при подготовке сводки'));
  sandbox.fixture.digests.reports[1].items[0].title='Проект лицензирования за исключением Сколково';
  sandbox.fixture.digests.reports[1].items[0].analysis.summary='INCORRECT_EXCEPTION_INTERPRETATION';
  vm.runInContext('renderDigestView(fixture)',sandbox);
