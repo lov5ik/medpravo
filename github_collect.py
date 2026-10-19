@@ -17,10 +17,21 @@ import relevance as scope
 import date_policy
 import daily_digest
 import source_reader
+import concurrent.futures
 
 ROOT=Path(__file__).resolve().parent
 MAX_ARCHIVE=60*1024*1024
 FILE_PATH=re.compile(r'files/[0-9a-f]{64}\.(pdf|zip|rar|7z|doc|docx|xls|xlsx|rtf)$')
+
+
+def retry_failed_sources(bounded):
+    """Refresh failed sources without claiming a new full 26-source collection."""
+    enabled=set(m.settings()['enabled_sources'])
+    with m.connection() as con:
+        failed={r[0] for r in con.execute("SELECT id FROM sources WHERE status IN ('blocked','needs_adapter')")}
+    selected=[s for s in bounded if s['id'] in enabled and s['id'] in failed]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        return list(pool.map(m.scan_source,selected))
 
 def write_json(path,value):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -180,6 +191,7 @@ def main():
     parser.add_argument('--state-dir',type=Path,default=Path('.state'))
     parser.add_argument('--site-dir',type=Path,default=Path('site'))
     parser.add_argument('--export-only',action='store_true')
+    parser.add_argument('--retry-failed',action='store_true')
     args=parser.parse_args()
     m.DATA=args.state_dir/'data';persist=args.state_dir/'persist'
     fresh=not (m.DATA/'monitor.sqlite').exists()
@@ -195,8 +207,11 @@ def main():
         bounded=[{**s,'page_limit':max(min(s.get('page_limit',6),16),len(s['seeds'])+2),'document_limit':min(s.get('document_limit',100),80),'time_budget':s.get('github_time_budget',100)} for s in cfg]
         original=m.catalog;m.catalog=lambda:bounded
         try:
-            result=m.scan()
-            if result.get('error'):raise RuntimeError(result['error'])
+            if args.retry_failed:
+                print(json.dumps({'retried_sources':retry_failed_sources(bounded)},ensure_ascii=False),flush=True)
+            else:
+                result=m.scan()
+                if result.get('error'):raise RuntimeError(result['error'])
         finally:m.catalog=original
     data=export_site(args.site_dir,os.environ.get('GITHUB_REPOSITORY',''),True,persist,0 if args.export_only else 90)
     compact_state(persist)
