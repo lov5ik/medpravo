@@ -23,8 +23,9 @@ def scan_source(namespace,source):
         seed_cursor=con.execute('SELECT page FROM api_cursor WHERE source_id=?',(source['id'],)).fetchone()
     # Refresh every configured section before continuing the saved frontier.
     # An old pagination queue must not starve the other OMS sections.
-    seed_offset=(seed_cursor[0] if seed_cursor and source.get('adapter') not in ('clinrec','projects') else 0)%len(source['seeds'])
-    roots=source['seeds'][seed_offset:]+source['seeds'][:seed_offset]
+    configured_roots=source['seeds']+source.get('fallback_seeds',[])
+    seed_offset=(seed_cursor[0] if seed_cursor and source.get('adapter') not in ('clinrec','projects') else 0)%len(configured_roots)
+    roots=configured_roots[seed_offset:]+configured_roots[:seed_offset]
     queue=list(dict.fromkeys(m.canonical(url) for url in roots+(json.loads(cursor[0]) if cursor else [])))
     queue=[url for url in queue if url not in source.get('obsolete_seeds',[]) and not any(url.startswith(p) for p in source.get('obsolete_prefixes',[]))]
     visited,failures,failed_pages=set(),[],[]
@@ -37,6 +38,7 @@ def scan_source(namespace,source):
     limited=False
     valid_empty=False
     routes=set()
+    reserve_read=False
     past_pages={}
     def remember(found):
         nonlocal found_count,excluded
@@ -105,6 +107,10 @@ def scan_source(namespace,source):
                 routes.add(result.get('network_route','primary'))
                 if result['type']!='text':raise ValueError('Каталог не является текстовой страницей')
                 found,pages=m.discover(result['text'],result['url'],source)
+                if source.get('fallback_seeds') and urllib.parse.urlsplit(url).hostname=='publication.pravo.gov.ru':
+                    empty=adapters.validate_publication_reserve(result['text'],result['url'],source,found,m.parse_page)
+                    valid_empty=valid_empty or empty
+                    reserve_read=True
                 if source.get('adapter')=='miac':found=adapters.miac_rows(result['text'],result['url'],m.parse_page)
                 if source.get('adapter')=='ffoms':found=adapters.ffoms_rows(result['text'],result['url'],m.parse_page)
                 if source.get('adapter')=='grls':found,pages=adapters.grls_rows(result['text'],result['url'],m.parse_page)
@@ -191,6 +197,8 @@ def scan_source(namespace,source):
     detail=f'Прочитано страниц: {pages_read}; извлечено ссылок: {found_count}; добавлено: {added}; в очереди: {remaining}; исключено по предмету: {excluded}. '
     if date_excluded:detail+=f'Не добавлено из-за даты публикации: {date_excluded}. '
     detail+='Проверены только настроенные разделы. '
+    if reserve_read:
+        detail+='Прочитан официальный резерв: акты Роспотребнадзора и Главного санитарного врача на портале правовой информации. Ведомственные письма и разъяснения на основном сайте могут быть недоступны. '
     if limited:detail+=f'Обход продолжится: страниц каталога в очереди — {len(queue)}; документов — {remaining}. '
     if status=='needs_adapter':detail+='Каталог не прочитан: отсутствие новых публикаций не подтверждено. '
     if valid_empty and not found_count:detail+='Настроенный каталог прочитан; по этому запросу документов нет. '
