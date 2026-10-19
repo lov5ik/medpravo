@@ -65,11 +65,15 @@ def main():
                 print('CDP:',version.get('Browser'),flush=True)
                 with sync_playwright() as playwright:
                     instance=playwright.chromium.connect_over_cdp(endpoint)
-                    context=instance.contexts[0]
+                    context=instance.new_context()
                     control=probe(context,{'id':'positive-control','seeds':['https://minzdrav.gov.ru/']},True)
+                    context.close()
                     if not control['ok']:raise RuntimeError('Positive control failed; site access cannot be assessed')
                     for source in m.catalog():
-                        if source['id'] in ids:results.append(probe(context,source))
+                        if source['id'] in ids:
+                            context=instance.new_context()
+                            try:results.append(probe(context,source))
+                            finally:context.close()
                     instance.close()
             finally:
                 with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
