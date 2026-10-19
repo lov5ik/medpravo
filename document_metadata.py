@@ -50,7 +50,7 @@ def publication(text,source,parse_page):
     return {'date':None,'conflict':bool(dates),'basis':'Противоречивые даты источника' if dates else 'Дата публикации не установлена'}
 
 def listing_dates(links,text,base,source,parse_page):
-    if source['id']=='pravo':
+    if source['id']=='pravo' or urllib.parse.urlsplit(base).hostname=='publication.pravo.gov.ru':
         dated={}
         # Every portal card has its own labelled publication date. Never use a
         # different card's date or the signing date embedded in an act's title.
@@ -75,7 +75,7 @@ def attachments(text,base,source,parse_page,permitted):
     for href,label in parse_page(text).links:
         url=urllib.parse.urljoin(base,href);path=urllib.parse.urlsplit(url).path
         if not permitted(url,source):continue
-        if re.search(r'\.(?:pdf|docx)(?:$)',path,re.I) or source['id']=='pravo' and path=='/file/pdf':
+        if re.search(r'\.(?:pdf|docx)(?:$)',path,re.I) or urllib.parse.urlsplit(url).hostname=='publication.pravo.gov.ru' and path=='/file/pdf':
             choices.append(url)
     return list(dict.fromkeys(choices))[:2]
 
