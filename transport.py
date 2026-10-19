@@ -40,9 +40,13 @@ def context(source,root):
         return CONTEXTS[key]
 
 def pace(host):
+    host=host.lower().rstrip('.')
+    cautious=host=='rospotrebnadzor.ru' or host.endswith('.rospotrebnadzor.ru')
+    if cautious:host='rospotrebnadzor.ru'
+    interval=5.0 if cautious else 0.6
     with HOST_LOCK:
         wait=max(0,HOST_NEXT.get(host,0)-time.monotonic())
-        HOST_NEXT[host]=time.monotonic()+wait+0.6
+        HOST_NEXT[host]=time.monotonic()+wait+interval
     if wait:time.sleep(wait)
 
 def relay_url(value):
