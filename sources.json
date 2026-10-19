@@ -234,7 +234,8 @@
     ],
     "homepage": "https://rospotrebnadzor.ru/",
     "allowed_domains": [
-      "rospotrebnadzor.ru"
+      "rospotrebnadzor.ru",
+      "publication.pravo.gov.ru"
     ],
     "page_limit": 6,
     "document_limit": 100,
@@ -244,7 +245,12 @@
     "time_budget": 120,
     "adapter": "html",
     "ca_bundle": "russian-chain.pem",
-    "allow_document_date": true
+    "allow_document_date": true,
+    "fallback_seeds": [
+      "http://publication.pravo.gov.ru/search?PublishDateSearchType=0&PublishDateFrom=01.10.2026&SortedBy=0&SortDestination=1&pageSize=100&SignatoryAuthorityId=301a6637-bc92-4bb5-9333-88df74026192",
+      "http://publication.pravo.gov.ru/search?PublishDateSearchType=0&PublishDateFrom=01.10.2026&SortedBy=0&SortDestination=1&pageSize=100&SignatoryAuthorityId=23da7027-18b0-4740-b26d-93c453bb3e8c"
+    ],
+    "transport_note": "Официальные приказы Роспотребнадзора и постановления Главного санитарного врача дополнительно проверяются на портале правовой информации. Это не заменяет ведомственные письма и разъяснения на основном сайте."
   },
   {
     "id": "kaluga-rospotreb",
